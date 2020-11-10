@@ -1,12 +1,17 @@
 import torchvision
 from torchvision import transforms
 from torch.utils.data import DataLoader
+import math
 
+class Normalize(object):
+    def __call__(self, tensor):
+        for t in tensor:
+            t.sub_(t.mean()).div_(max(t.std(), 1 / math.sqrt(t.numel())))
 
 def get_loader(batch_size, num_workers):
     transform = transforms.Compose([
         transforms.ToTensor(),
-        # TODO: add normalization
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
     ])
 
     train_data = torchvision.datasets.CIFAR10('data', train=True, transform=transform, download=True)

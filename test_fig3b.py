@@ -4,7 +4,7 @@ from tqdm import tqdm
 import torch
 
 from dataset import get_loader
-from model import CifarNet
+from model_fig3b import CifarNet
 import utils
 
 parser = argparse.ArgumentParser()
@@ -36,6 +36,11 @@ parser.add_argument(
     type=str,
     default='checkpoints'
 )
+parser.add_argument(
+    '--target_cls',
+    type=int,
+    default=0
+)
 
 args = parser.parse_args()
 
@@ -49,28 +54,37 @@ model.load_state_dict(state_dict)
 with torch.no_grad():
     total_num = 0
     correct_num = 0
+    cls_active_prob_list = [0] * 8
 
     model.eval()
-    MACs_total = 0
     for img_batch, lb_batch in tqdm(test_loader, total=len(test_loader)):
         img_batch = img_batch.cuda()
         lb_batch = lb_batch.cuda()
-        if args.fbs:
-            pred_batch, _, MACs = model(img_batch)
-            MACs_total += MACs.sum().item()
-        else:
-            pred_batch, MACs = model(img_batch)
-            #             MACs_total += MACs * img_batch.size(0)
-            MACs_total += MACs.sum().item()
+
+        cls_mask = (lb_batch == args.target_cls)
+        if cls_mask.sum().item() == 0:
+            continue
+
+        img_batch = img_batch[cls_mask]
+        lb_batch = lb_batch[cls_mask]
+
+        pred_batch, _, active_channels_list = model(img_batch)
 
         _, pred_lb_batch = pred_batch.max(dim=1)
         total_num += lb_batch.shape[0]
         correct_num += pred_lb_batch.eq(lb_batch).sum().item()
 
+        for i in range(8):
+            cls_active_prob_list[i] += active_channels_list[i].sum(dim=0)
+
     test_acc = 100. * correct_num / total_num
-    MACs_avg = MACs_total / total_num
 
-print('Test accuracy: {}% MACs: {:.2f}'.format(test_acc, MACs_avg / 1e+8))
+    for i in range(8):
+        cls_active_prob_list[i] /= total_num
 
-with open('fig3a/results.tsv', 'a') as f:
-    f.write('{}\t{}\t{}\t{}\n'.format(args.fbs, args.sparsity_ratio, test_acc, MACs_avg))
+print('Test accuracy: {}%'.format(test_acc))
+
+for i in range(8):
+    with open('fig3b/conv{}.tsv'.format(i), 'a') as f:
+        f.write('\t'.join([str(prob) for prob in cls_active_prob_list[i].tolist()]))
+        f.write('\n')

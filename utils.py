@@ -5,7 +5,7 @@ import numpy as np
 import argparse
 import torch
 
-
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 def set_seed(seed):
     # for reproducibility. 
     # note that pytorch is not completely reproducible 
@@ -31,9 +31,17 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
-def global_avgpool2d(x):
-    raise NotImplementedError()
-
+def global_avgpool2d(x): #[N, C, H, W] -> [N, C]
+    return torch.mean(x, dim=(2, 3))
 
 def winner_take_all(x, sparsity_ratio):
-    raise NotImplementedError()
+    C = x.size(1)
+    k = int(sparsity_ratio*C)
+    val, idx = torch.topk(x, C-k, dim=-1, largest=False)
+    winner_mask = torch.ones_like(x)
+
+    return x.scatter_(1, idx, 0), winner_mask.scatter_(1, idx, 0)
+
+
+
+

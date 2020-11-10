@@ -37,39 +37,31 @@ class FBSConv2d(nn.Module):
             x = F.relu(x)
             return x
         else:
-            in_channels = (x.abs().sum(dim=(2, 3)) > 1e-15).sum(dim=-1)
+            in_channels = x.size(1)
             x = self.conv(x)
-            out_channels = (x.abs().sum(dim=(2, 3)) > 1e-15).sum(dim=-1)
-            H, W = x.size(2), x.size(3)
-
-            MACs = (self.kernel_size ** 2) * in_channels * out_channels * H * W
+            out_channels = x.size(1)
             x = self.bn(x)
             x = F.relu(x)
-            return x, MACs
+            return x
 
     def fbs_forward(self, x):
-        in_channels = (x.abs().sum(dim=(2, 3)) > 1e-15).sum(dim=-1)
         ss = global_avgpool2d(x)
         g = F.relu(F.linear(ss, self.weights, self.bias))
 
         g_wta, winner_mask = winner_take_all(g, self.sparsity_ratio)
 
         x = self.conv(x)
-
         if not self.training:
             x = x * winner_mask.unsqueeze(2).unsqueeze(3)
 
-        out_channels = (x.abs().sum(dim=(2, 3)) > 1e-15).sum(dim=-1)
-        H, W = x.size(2), x.size(3)
-
-        MACs = (self.kernel_size ** 2) * in_channels * out_channels * H * W
+        active_channels = (x.abs().sum(dim=(2, 3)) > 1e-15).float()
 
         x = self.bn(x)
         x = x * g_wta.unsqueeze(2).unsqueeze(3)
         x = F.relu(x)
 
         if self.test:
-            return x, g.abs().sum(dim=1).mean(), MACs
+            return x, g.abs().sum(dim=1).mean(), active_channels
         else:
             return x, g.abs().sum(dim=1).mean()
 
@@ -131,57 +123,49 @@ class CifarNet(nn.Module):
             else:
                 return x
         else:
-            MACs = 0
+            active_channels_list = []
             if self.fbs:
                 lasso = 0
-                x, g, macs = self.layer0(x)
+                x, g, channel = self.layer0(x)
                 lasso += g
-                MACs += macs
-                x, g, macs = self.layer1(x)
+                active_channels_list.append(channel)
+                x, g, channel = self.layer1(x)
                 lasso += g
-                MACs += macs
-                x, g, macs = self.layer2(x)
+                active_channels_list.append(channel)
+                x, g, channel = self.layer2(x)
                 lasso += g
-                MACs += macs
-                x, g, macs = self.layer3(x)
+                active_channels_list.append(channel)
+                x, g, channel = self.layer3(x)
                 lasso += g
-                MACs += macs
-                x, g, macs = self.layer4(x)
+                active_channels_list.append(channel)
+                x, g, channel = self.layer4(x)
                 lasso += g
-                MACs += macs
-                x, g, macs = self.layer5(x)
+                active_channels_list.append(channel)
+                x, g, channel = self.layer5(x)
                 lasso += g
-                MACs += macs
-                x, g, macs = self.layer6(x)
+                active_channels_list.append(channel)
+                x, g, channel = self.layer6(x)
                 lasso += g
-                MACs += macs
-                x, g, macs = self.layer7(x)
+                active_channels_list.append(channel)
+                x, g, channel = self.layer7(x)
                 lasso += g
-                MACs += macs
+                active_channels_list.append(channel)
 
             else:
-                x, macs = self.layer0(x)
-                MACs += macs
-                x, macs = self.layer1(x)
-                MACs += macs
-                x, macs = self.layer2(x)
-                MACs += macs
-                x, macs = self.layer3(x)
-                MACs += macs
-                x, macs = self.layer4(x)
-                MACs += macs
-                x, macs = self.layer5(x)
-                MACs += macs
-                x, macs = self.layer6(x)
-                MACs += macs
-                x, macs = self.layer7(x)
-                MACs += macs
+                x = self.layer0(x)
+                x = self.layer1(x)
+                x = self.layer2(x)
+                x = self.layer3(x)
+                x = self.layer4(x)
+                x = self.layer5(x)
+                x = self.layer6(x)
+                x = self.layer7(x)
 
             x = self.pool(x)
             x = torch.flatten(x, 1)
             x = self.fc(x)
 
             if self.fbs:
-                return x, lasso, MACs
+                return x, lasso, active_channels_list
             else:
-                return x, MACs
+                return x
